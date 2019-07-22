@@ -33,10 +33,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.imps.CuratorFrameworkState;
 import org.apache.kylin.common.KylinConfig;
+import org.apache.kylin.common.persistence.ResourceStore;
 import org.apache.kylin.common.restclient.RestClient;
 import org.apache.kylin.common.util.ClassUtil;
 import org.apache.kylin.common.util.DaemonThreadFactory;
+import org.apache.kylin.common.util.ZKUtil;
 import org.apache.kylin.metadata.project.ProjectManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,22 +90,18 @@ public class Broadcaster {
     private BlockingDeque<BroadcastEvent> broadcastEvents = new LinkedBlockingDeque<>();
     private Map<String, List<Listener>> listenerMap = Maps.newConcurrentMap();
     private AtomicLong counter = new AtomicLong(); // a counter for testing purpose
-    
+
+    private CuratorFramework curator;
+
     private Broadcaster(final KylinConfig config) {
         this.config = config;
         this.syncErrorHandler = getSyncErrorHandler(config);
         this.announceMainLoop = Executors.newSingleThreadExecutor(new DaemonThreadFactory());
-        
-        final String[] nodes = config.getRestServers();
-        if (nodes == null || nodes.length < 1) {
-            logger.warn("There is no available rest server; check the 'kylin.server.cluster-servers' config");
-        }
-        logger.debug("{} nodes in the cluster: {}", (nodes == null ? 0 : nodes.length), Arrays.toString(nodes));
-        
-        int corePoolSize = (nodes == null || nodes.length < 1)? 1 : nodes.length;
-        int maximumPoolSize = (nodes == null || nodes.length < 1)? 10 : nodes.length * 2;
-        this.announceThreadPool = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, 60L, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<Runnable>(), new DaemonThreadFactory());
+
+        this.curator = ZKUtil.getZookeeperClient(this.config);
+
+        this.announceThreadPool = Executors.newCachedThreadPool(new DaemonThreadFactory());
+
 
         announceMainLoop.execute(new Runnable() {
             @Override
@@ -112,8 +112,13 @@ public class Broadcaster {
                     try {
                         final BroadcastEvent broadcastEvent = broadcastEvents.takeFirst();
 
-                        String[] restServers = config.getRestServers();
-                        logger.debug("Servers in the cluster: {}", Arrays.toString(restServers));
+                        // curator closed in some case(like Expired),restart it
+                        if (curator.getState() != CuratorFrameworkState.STARTED) {
+                            curator = ZKUtil.getZookeeperClient(config);
+                        }
+
+                        List<String> restServers = curator.getChildren().forPath(ResourceStore.CLUSTER_HOSTS);
+                        logger.debug("Servers in the cluster: {}", Arrays.toString(restServers.toArray()));
                         for (final String node : restServers) {
                             if (restClientMap.containsKey(node) == false) {
                                 restClientMap.put(node, new RestClient(node));

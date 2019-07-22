@@ -32,6 +32,11 @@ public class ZookeeperJobLock implements DistributedLock, JobLock {
     private ZookeeperDistributedLock lock = (ZookeeperDistributedLock) new ZookeeperDistributedLock.Factory().lockForCurrentProcess();
 
     @Override
+    public boolean discoverLock(String path, byte[] data) {
+        return lock.discoverLock(path, data);
+    }
+
+    @Override
     public String getClient() {
         return lock.getClient();
     }

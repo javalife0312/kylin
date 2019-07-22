@@ -81,6 +81,8 @@ abstract public class ResourceStore {
     public static final String USER_ROOT = "/user";
     public static final String EXT_SNAPSHOT_RESOURCE_ROOT = "/ext_table_snapshot";
 
+    public static final String CLUSTER_HOSTS = "/kylin_hosts";
+
     public static final String METASTORE_UUID_TAG = "/UUID";
 
     private static final ConcurrentMap<KylinConfig, ResourceStore> CACHE = new ConcurrentHashMap<>();

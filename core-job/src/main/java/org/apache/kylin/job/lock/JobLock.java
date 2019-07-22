@@ -23,6 +23,10 @@ package org.apache.kylin.job.lock;
  * This interface is for such negotiation. 
  */
 public interface JobLock {
+
+    default boolean discoverLock(String path, byte[] data) {
+        return true;
+    }
     
     boolean lockJobEngine();
 

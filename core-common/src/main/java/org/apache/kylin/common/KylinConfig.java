@@ -32,16 +32,20 @@ import java.nio.ByteOrder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.kylin.common.persistence.ResourceStore;
 import org.apache.kylin.common.restclient.RestClient;
 import org.apache.kylin.common.threadlocal.InternalThreadLocal;
 import org.apache.kylin.common.util.ClassUtil;
 import org.apache.kylin.common.util.OrderedProperties;
+import org.apache.kylin.common.util.ZKUtil;
 import org.apache.zookeeper.Shell;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,6 +94,21 @@ public class KylinConfig extends KylinConfigBase {
         System.setProperty("saffron.default.nationalcharset", NATIVE_UTF16_CHARSET_NAME);
         System.setProperty("saffron.default.collation.name", NATIVE_UTF16_CHARSET_NAME + "$en_US");
 
+    }
+
+    @Override
+    public String[] getRestServers() {
+        if (2==getSchedulerType()) {
+            try {
+                CuratorFramework curator = ZKUtil.getZookeeperClient(this);
+                List<String> restServers = curator.getChildren().forPath(ResourceStore.CLUSTER_HOSTS);
+                return restServers.toArray(new String[0]);
+            } catch (Exception e) {
+                logger.error("discover server getRestServers ", e);
+            }
+
+        }
+        return getOptionalStringArray("kylin.server.cluster-servers", new String[0]);
     }
 
     /**

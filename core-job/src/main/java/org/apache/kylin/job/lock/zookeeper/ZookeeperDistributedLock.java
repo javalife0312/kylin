@@ -20,6 +20,7 @@ package org.apache.kylin.job.lock.zookeeper;
 
 import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.Executor;
 
@@ -81,6 +82,36 @@ public class ZookeeperDistributedLock implements DistributedLock, JobLock {
         this.curator = curator;
         this.client = client;
         this.clientBytes = client.getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public boolean discoverLock(String path, byte[] data) {
+
+        // curator closed in some case(like Expired),restart it
+        if (curator.getState() != CuratorFrameworkState.STARTED) {
+            curator = ZKUtil.getZookeeperClient(KylinConfig.getInstanceFromEnv());
+        }
+
+        if (Objects.isNull(peekLock(path))) {
+            try {
+                curator.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path, data);
+            } catch (KeeperException.NodeExistsException ex) {
+                logger.debug("{} is already locked", path);
+            } catch (Exception ex) {
+                throw new IllegalStateException("Error while trying to lock " + path, ex);
+            }
+
+            String info = peekLock(path);
+            if (Objects.nonNull(info)) {
+                logger.info("acquired lock at {}", path);
+                return true;
+            } else {
+                logger.debug("failed to acquire lock at {}, which is held by {}", path, info);
+                return false;
+            }
+        }
+
+        return true;
     }
 
     @Override

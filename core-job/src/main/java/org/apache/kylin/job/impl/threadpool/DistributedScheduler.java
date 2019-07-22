@@ -20,6 +20,7 @@ package org.apache.kylin.job.impl.threadpool;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -32,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.kylin.common.KylinConfig;
 import org.apache.kylin.common.lock.DistributedLock;
+import org.apache.kylin.common.persistence.ResourceStore;
 import org.apache.kylin.common.util.SetThreadName;
 import org.apache.kylin.common.util.StringUtil;
 import org.apache.kylin.job.Scheduler;
@@ -89,6 +91,8 @@ public class DistributedScheduler implements Scheduler<AbstractExecutable> {
     private volatile boolean hasStarted = false;
     private JobEngineConfig jobEngineConfig;
     private String serverName;
+
+    private ScheduledExecutorService discoverService = Executors.newScheduledThreadPool(1);
 
     private class JobRunner implements Runnable {
 
@@ -184,6 +188,19 @@ public class DistributedScheduler implements Scheduler<AbstractExecutable> {
     @Override
     public synchronized void init(JobEngineConfig jobEngineConfig, JobLock jobLock) throws SchedulerException {
         String serverMode = jobEngineConfig.getConfig().getServerMode();
+
+        //from kylin.sh -Dkylin.server.host-address=${kylin_rest_address}
+        String restAddress = jobEngineConfig.getConfig().getServerRestAddress();
+
+        final String host = restAddress.substring(0, restAddress.indexOf(":"));
+        final String port = restAddress.substring(restAddress.indexOf(":") + 1);
+
+        discoverService.scheduleAtFixedRate(() -> {
+            String data = host + ":" + port;
+            String path = ResourceStore.CLUSTER_HOSTS + "/" + data;
+            jobLock.discoverLock(path, data.getBytes(Charset.forName("UTF-8")));
+        }, 10, jobEngineConfig.getConfig().getZKMonitorInterval(), TimeUnit.SECONDS);
+
         if (!("job".equals(serverMode.toLowerCase(Locale.ROOT)) || "all".equals(serverMode.toLowerCase(Locale.ROOT)))) {
             logger.info("server mode: " + serverMode + ", no need to run job scheduler");
             return;
